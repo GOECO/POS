@@ -1,0 +1,21 @@
+name: POS AI CI
+on:
+  pull_request:
+  push:
+    branches: [main, "feat/**"]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install test dependencies
+        run: pip install -r backend/requirements-dev.txt
+      - name: Run API tests
+        env:
+          POS_API_KEY: testing-only-key-do-not-use-in-production
+        run: python -m pytest -q backend/tests/
+      - name: Compile Python
+        run: python -m compileall -q backend

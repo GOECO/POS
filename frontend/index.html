@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GOECO POS AI | Thu ngân</title>
+<style>
+:root{font-family:system-ui,-apple-system,Segoe UI,sans-serif;color:#14233d;background:#f3f6fc}*{box-sizing:border-box}body{margin:0}header{background:#102338;color:white;padding:20px 24px;display:flex;justify-content:space-between;gap:10px;align-items:center}header strong{font-size:1.45rem}small{color:#95a8bc}.wrap{max-width:1280px;margin:24px auto;padding:0 16px;display:grid;grid-template-columns:1fr 360px;gap:18px}.panel{background:#fff;border:1px solid #e4ebf3;border-radius:16px;padding:20px;box-shadow:0 4px 30px #1023380c}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}input,select,button{font:inherit;border-radius:10px;padding:11px;border:1px solid #dce4ee}input{min-width:0;flex:1}button{cursor:pointer;background:#eef4f8;color:#16304b}button.primary{background:#137c64;color:white;border-color:#137c64}button.danger{color:#9b3040}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(185px,1fr));gap:12px}.product{text-align:left;min-height:124px;border-color:#dde8ef;background:#fafdff}.product strong{display:block;font-size:1rem}.product span{display:block;color:#137c64;font-weight:700;margin:10px 0}.muted{color:#607187;font-size:.87rem}.item{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #edf0f5;padding:12px 0;gap:8px}.item button{padding:5px 9px}.total{font-weight:800;font-size:1.3rem;padding:18px 0;display:flex;justify-content:space-between}.stack{display:grid;gap:10px}.status{min-height:36px;margin-top:14px;font-size:.92rem;color:#22557a;white-space:pre-wrap}.price{color:#06795d}h2{font-size:1.15rem;margin:0 0 16px}footer{max-width:1280px;margin:0 auto 30px;padding:0 16px;color:#697b90;font-size:.8rem}@media(max-width:850px){.wrap{grid-template-columns:1fr}header{flex-direction:column;align-items:flex-start}}
+</style>
+</head>
+<body>
+<header><div><strong>GOECO POS <span style="color:#49dab3">AI</span></strong><div><small>Thu ngân bán hàng · MVP một cửa hàng</small></div></div><div>Không có thanh toán online tự động</div></header>
+<main class="wrap">
+<section class="panel">
+<h2>Sản phẩm</h2>
+<div class="toolbar"><input id="token" type="password" autocomplete="off" placeholder="API key của cửa hàng"><button id="load" class="primary">Kết nối</button></div>
+<div class="toolbar"><input id="search" placeholder="Tìm sản phẩm theo tên hoặc SKU"></div>
+<div id="products" class="grid"></div>
+<hr style="border:0;border-top:1px solid #e9eef4;margin:28px 0">
+<h2>Thêm sản phẩm</h2>
+<form id="add" class="stack">
+<input name="sku" required maxlength="64" placeholder="SKU (VD: CAFE-01)">
+<input name="name" required maxlength="200" placeholder="Tên sản phẩm">
+<input name="price" type="number" min="0" step="1" required placeholder="Giá bán (VND)">
+<input name="stock" type="number" min="0" step="1" required placeholder="Số lượng tồn kho">
+<button class="primary" type="submit">Thêm sản phẩm</button>
+</form>
+</section>
+<aside class="panel">
+<h2>Giỏ hàng</h2><div id="cart"><p class="muted">Chưa chọn sản phẩm</p></div>
+<div class="total"><span>Tổng tiền</span><span id="total" class="price">0 ₫</span></div>
+<form id="checkout" class="stack">
+<label for="method">Hình thức thanh toán</label>
+<select id="method"><option value="cash">Tiền mặt</option><option value="bank_transfer">Chuyển khoản (chờ đối soát)</option></select>
+<input id="received" type="number" min="0" step="1" placeholder="Tiền khách đưa (VND)">
+<button class="primary" type="submit">Tạo đơn hàng</button>
+</form>
+<div id="status" class="status" role="status"></div>
+<p class="muted">Tiền mặt chỉ được ghi nhận theo xác nhận của thu ngân. Chuyển khoản luôn ở trạng thái chờ; không giả lập thanh toán thành công.</p>
+</aside>
+</main>
+<footer>GOECO POS AI · Bản thử nghiệm kỹ thuật. Không dùng để xử lý giao dịch thật khi chưa nghiệm thu bảo mật, hóa đơn, đối soát.</footer>
+<script>
+(function(){
+"use strict";
+var products=[],cart=new Map(),token="";
+var $=function(id){return document.getElementById(id)};
+var money=function(n){return Number(n).toLocaleString("vi-VN")+" ₫"};
+var say=function(msg){$("status").textContent=msg};
+var api=async function(url,method,body,extra){
+  var headers=Object.assign({"Authorization":"Bearer "+token},extra||{});
+  if(body)headers["Content-Type"]="application/json";
+  var res=await fetch(url,{method:method||"GET",headers:headers,body:body?JSON.stringify(body):undefined});
+  var obj=await res.json().catch(function(){return {}});
+  if(!res.ok)throw Error(typeof obj.detail==="string"?obj.detail:"API lỗi "+res.status);
+  return obj;
+};
+function render(){
+ var q=$("search").value.trim().toLowerCase();
+ $("products").replaceChildren();
+ products.filter(function(p){return (p.name+" "+p.sku).toLowerCase().includes(q)}).forEach(function(p){
+   var btn=document.createElement("button");btn.className="product";
+   var name=document.createElement("strong");name.textContent=p.name;
+   var cost=document.createElement("span");cost.textContent=money(p.unit_price_vnd);
+   var stock=document.createElement("div");stock.className="muted";stock.textContent=p.sku+" · Tồn "+p.stock;
+   btn.append(name,cost,stock);btn.disabled=p.stock<=0;
+   btn.onclick=function(){var next=(cart.get(p.id)||0)+1;if(next<=p.stock){cart.set(p.id,next);renderCart()}else say("Không đủ hàng tồn kho")};
+   $("products").append(btn);
+ });
+ renderCart();
+}
+function renderCart(){
+ $("cart").replaceChildren();var total=0;
+ cart.forEach(function(qty,id){
+  var p=products.find(function(x){return x.id===id});if(!p)return;
+  total+=p.unit_price_vnd*qty;
+  var row=document.createElement("div");row.className="item";
+  var label=document.createElement("span");label.textContent=p.name+" × "+qty;
+  var remove=document.createElement("button");remove.textContent="−";remove.title="Giảm số lượng";
+  remove.onclick=function(){if(qty<=1)cart.delete(id);else cart.set(id,qty-1);renderCart()};
+  row.append(label,remove);$("cart").append(row);
+ });
+ if(cart.size===0){var empty=document.createElement("p");empty.className="muted";empty.textContent="Chưa chọn sản phẩm";$("cart").append(empty)}
+ $("total").textContent=money(total);
+ return total;
+}
+async function load(){
+ token=$("token").value;
+ if(!token){say("Vui lòng nhập API key");return}
+ try{products=await api("/v1/products");render();say("Đã kết nối. Sản phẩm: "+products.length)}
+ catch(e){say(e.message)}
+}
+$("load").onclick=load;
+$("search").oninput=render;
+$("method").onchange=function(){$("received").style.display=this.value==="cash"?"block":"none"};
+$("add").onsubmit=async function(e){
+ e.preventDefault();if(!token){say("Hãy kết nối trước");return}
+ var d=new FormData(this);
+ try{await api("/v1/products","POST",{sku:String(d.get("sku")),name:String(d.get("name")),unit_price_vnd:Number(d.get("price")),stock:Number(d.get("stock"))});this.reset();await load();say("Đã thêm sản phẩm")}
+ catch(err){say(err.message)}
+};
+$("checkout").onsubmit=async function(e){
+ e.preventDefault();if(!cart.size){say("Giỏ hàng đang trống");return}
+ var total=renderCart(),method=$("method").value;
+ var body={items:Array.from(cart,function(entry){return {product_id:entry[0],quantity:entry[1]}}),payment_method:method};
+ if(method==="cash"){body.cash_received_vnd=Number($("received").value);if(!$("received").value||body.cash_received_vnd<total){say("Số tiền mặt chưa đủ");return}}
+ var bytes=new Uint8Array(16);crypto.getRandomValues(bytes);
+ var key="checkout-"+Array.from(bytes,function(v){return v.toString(16).padStart(2,"0")}).join("");
+ var btn=this.querySelector("button");btn.disabled=true;
+ try{
+  var order=await api("/v1/orders","POST",body,{"Idempotency-Key":key});
+  cart.clear();$("received").value="";products=await api("/v1/products");render();
+  say("Đơn #"+order.id+" · "+money(order.total_vnd)+" · "+(order.payment_status==="cash_recorded"?"Đã ghi nhận tiền mặt":"Chờ xác nhận chuyển khoản"));
+ }catch(err){say("Giao dịch chưa xác nhận: "+err.message+"; kiểm tra lịch sử đơn trước khi thử lại.")}
+ finally{btn.disabled=false}
+};
+$("received").style.display="block";
+})();
+</script>
+</body></html>
